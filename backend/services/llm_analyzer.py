@@ -83,7 +83,7 @@ class LLMAnalyzer:
                     # Fallback for development without API key
                     analysis = [{"category": "unknown", "scope": "unknown", "impact": "medium", "description": commit["message"][:100]} for commit in batch]
                 else:
-                    response = await self.openai_client.ChatCompletion.acreate(
+                    response = await openai.ChatCompletion.acreate(
                         model="gpt-3.5-turbo",
                         messages=[{"role": "user", "content": prompt}],
                         temperature=0.3
@@ -322,7 +322,7 @@ class LLMAnalyzer:
                     "insights": ["This is a demo response for development environment"]
                 }
             
-            response = await self.openai_client.ChatCompletion.acreate(
+            response = await openai.ChatCompletion.acreate(
                 model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3
