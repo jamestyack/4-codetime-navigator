@@ -5,7 +5,7 @@ const nextConfig = {
       {
         source: '/api/:path*',
         destination: process.env.NODE_ENV === 'production' 
-          ? 'https://your-render-app.onrender.com/:path*'
+          ? 'https://four-codetime-navigator.onrender.com/:path*'
           : 'http://localhost:8001/:path*',
       },
     ]
