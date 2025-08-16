@@ -3,18 +3,44 @@
 import { useState } from 'react';
 import { MessageCircle, Send, Lightbulb } from 'lucide-react';
 import axios from 'axios';
+import { repositoryExamples, type RepositoryExample } from '@/data/repositoryExamples';
 
 interface QueryInterfaceProps {
   repoId: string;
   repoTitle?: string;
 }
 
+interface CommitInfo {
+  hash?: string;
+  message?: string;
+  author?: string;
+  date?: string;
+}
+
+interface Evidence {
+  commit?: string | CommitInfo;
+  commit_hash?: string;
+  hash?: string;
+  message?: string;
+  description?: string;
+  author?: string;
+  date?: string;
+  files_changed?: number;
+}
+
+interface TimelineEvent {
+  event?: string;
+  description?: string;
+  message?: string;
+  date?: string;
+}
+
 interface QueryResult {
   query: string;
   result: {
     answer: string;
-    evidence: any[];
-    timeline: any[];
+    evidence: Evidence[];
+    timeline: TimelineEvent[];
     insights: string[] | string;
   };
 }
@@ -42,7 +68,7 @@ export function QueryInterface({ repoId, repoTitle }: QueryInterfaceProps) {
       // Debug log to see the structure
       console.log('Query response:', response.data);
       setResults(prev => [response.data, ...prev]);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Query failed:', error);
       setResults(prev => [{
         query: currentQuery,
@@ -62,9 +88,7 @@ export function QueryInterface({ repoId, repoTitle }: QueryInterfaceProps) {
   const getRepoSpecificQueries = () => {
     if (!repoTitle) return null;
     
-    // Import at runtime to avoid build issues
-    const { repositoryExamples } = require('@/data/repositoryExamples');
-    const repo = repositoryExamples.find((r: any) => 
+    const repo = repositoryExamples.find((r: RepositoryExample) => 
       repoTitle.toLowerCase().includes(r.title.toLowerCase()) ||
       r.title.toLowerCase().includes(repoTitle.toLowerCase())
     );
@@ -93,7 +117,7 @@ export function QueryInterface({ repoId, repoTitle }: QueryInterfaceProps) {
           <h3 className="text-lg font-semibold text-gray-900">Ask Questions</h3>
         </div>
         <p className="text-sm text-gray-600 mt-1">
-          Ask natural language questions about the repository's evolution
+          Ask natural language questions about the repository&apos;s evolution
         </p>
       </div>
 
@@ -163,7 +187,7 @@ export function QueryInterface({ repoId, repoTitle }: QueryInterfaceProps) {
                   <div className="mb-3">
                     <h5 className="font-medium text-gray-900 mb-2">Evidence:</h5>
                     <div className="space-y-2">
-                      {result.result.evidence.slice(0, 3).map((evidence: any, i: number) => (
+                      {result.result.evidence.slice(0, 3).map((evidence: Evidence, i: number) => (
                         <div key={i} className="bg-gray-50 p-3 rounded text-sm">
                           {typeof evidence === 'object' && evidence !== null ? (
                             <>
@@ -188,17 +212,15 @@ export function QueryInterface({ repoId, repoTitle }: QueryInterfaceProps) {
                                    `${evidence.files_changed} ${typeof evidence.files_changed === 'number' ? 'files' : ''} changed` : 
                                    '')}
                                 {/* Show author if available */}
-                                {(evidence.author || (evidence.commit && evidence.commit.author)) && (
+                                {(evidence.author || (evidence.commit && typeof evidence.commit === 'object' && evidence.commit.author)) && (
                                   <div className="text-xs text-gray-500">
-                                    by {typeof (evidence.author || evidence.commit.author) === 'object' ? 
-                                      JSON.stringify(evidence.author || evidence.commit.author) : 
-                                      String(evidence.author || evidence.commit.author)}
+                                    by {evidence.author || (typeof evidence.commit === 'object' ? evidence.commit.author : '')}
                                   </div>
                                 )}
                               </div>
-                              {(evidence.date || (evidence.commit && evidence.commit.date)) && (
+                              {(evidence.date || (evidence.commit && typeof evidence.commit === 'object' && evidence.commit.date)) && (
                                 <div className="text-xs text-gray-500 mt-1">
-                                  {new Date(evidence.date || evidence.commit.date).toLocaleDateString()}
+                                  {new Date(evidence.date || (typeof evidence.commit === 'object' ? evidence.commit.date || '' : '')).toLocaleDateString()}
                                 </div>
                               )}
                             </>
@@ -215,7 +237,7 @@ export function QueryInterface({ repoId, repoTitle }: QueryInterfaceProps) {
                   <div className="mb-3">
                     <h5 className="font-medium text-gray-900 mb-2">Timeline:</h5>
                     <div className="space-y-2">
-                      {result.result.timeline.slice(0, 5).map((event: any, i: number) => (
+                      {result.result.timeline.slice(0, 5).map((event: TimelineEvent, i: number) => (
                         <div key={i} className="flex items-start space-x-3 text-sm">
                           <div className="text-blue-500 mt-1">•</div>
                           <div>

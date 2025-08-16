@@ -4,9 +4,16 @@ import { useState } from 'react';
 import { GitBranch, Search } from 'lucide-react';
 import axios from 'axios';
 
+interface AnalysisData {
+  repo_id: string;
+  status: string;
+  cached?: boolean;
+  [key: string]: unknown;
+}
+
 interface RepositoryInputProps {
   onAnalysisStart: (repoId: string) => void;
-  onAnalysisComplete: (data: any) => void;
+  onAnalysisComplete: (data: AnalysisData) => void;
   onAnalysisError: (error: string) => void;
 }
 
@@ -43,8 +50,11 @@ export function RepositoryInput({
       } else {
         pollForCompletion(repo_id);
       }
-    } catch (error: any) {
-      onAnalysisError(error.response?.data?.detail || 'Failed to analyze repository');
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error && 'response' in error 
+        ? (error as { response?: { data?: { detail?: string } } }).response?.data?.detail || 'Failed to analyze repository'
+        : 'Failed to analyze repository';
+      onAnalysisError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -63,7 +73,7 @@ export function RepositoryInput({
         } else {
           setTimeout(checkStatus, 3000);
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         onAnalysisError('Failed to check analysis status');
       }
     };

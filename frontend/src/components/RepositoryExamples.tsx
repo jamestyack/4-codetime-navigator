@@ -176,7 +176,7 @@ function RepositoryCard({ repo, isExpanded, onToggleExpanded, onAnalyze, isAnaly
                 <div className="space-y-1">
                   {repo.sampleQueries.slice(0, 2).map((query, index) => (
                     <div key={index} className="text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded italic">
-                      "{query}"
+                      &quot;{query}&quot;
                     </div>
                   ))}
                 </div>
