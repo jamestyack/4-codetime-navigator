@@ -15,7 +15,7 @@ interface QueryResult {
     answer: string;
     evidence: any[];
     timeline: any[];
-    insights: string[];
+    insights: string[] | string;
   };
 }
 
@@ -236,13 +236,16 @@ export function QueryInterface({ repoId, repoTitle }: QueryInterfaceProps) {
                   </div>
                 )}
 
-                {result.result.insights && result.result.insights.length > 0 && (
+                {result.result.insights && (
                   <div>
                     <h5 className="font-medium text-gray-900 mb-2">Key Insights:</h5>
                     <ul className="list-disc list-inside text-sm text-gray-700 space-y-1">
-                      {result.result.insights.map((insight: string, i: number) => (
-                        <li key={i}>{String(insight)}</li>
-                      ))}
+                      {Array.isArray(result.result.insights) ? 
+                        result.result.insights.map((insight: string, i: number) => (
+                          <li key={i}>{String(insight)}</li>
+                        )) :
+                        <li>{String(result.result.insights)}</li>
+                      }
                     </ul>
                   </div>
                 )}
