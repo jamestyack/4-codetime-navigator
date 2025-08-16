@@ -23,7 +23,14 @@ class GitAnalyzer:
             if os.path.exists(repo_path):
                 shutil.rmtree(repo_path)
             
-            repo = git.Repo.clone_from(repo_url, repo_path)
+            # Clone repository with optimizations for large repos
+            repo = git.Repo.clone_from(
+                repo_url, 
+                repo_path,
+                depth=min(max_commits + 100, 500),  # Very shallow clone based on needed commits
+                single_branch=True,  # Only clone main/master branch
+                progress=None  # Disable progress to avoid hanging
+            )
             
             # Extract commit data
             commits = self._extract_commits(repo, max_commits)
@@ -77,18 +84,28 @@ class GitAnalyzer:
         return commits
     
     def _extract_file_stats(self, repo: git.Repo) -> Dict[str, Any]:
-        """Extract file statistics from repository"""
+        """Extract file statistics from repository (optimized for speed)"""
         files = {}
         
-        # Get all files in latest commit
-        for item in repo.head.commit.tree.traverse():
-            if item.type == 'blob':  # It's a file
-                file_path = item.path
-                files[file_path] = {
-                    "size": item.size,
-                    "type": self._get_file_type(file_path),
-                    "last_modified": repo.head.commit.committed_datetime.isoformat()
-                }
+        # Only get top-level files and important directories for speed
+        try:
+            file_count = 0
+            for item in repo.head.commit.tree.traverse():
+                if item.type == 'blob' and file_count < 100:  # Limit files processed
+                    file_path = item.path
+                    # Skip deep nested files or very large files
+                    if file_path.count('/') > 3 or item.size > 1000000:  # Skip files deeper than 3 levels or > 1MB
+                        continue
+                        
+                    files[file_path] = {
+                        "size": item.size,
+                        "type": self._get_file_type(file_path),
+                        "last_modified": repo.head.commit.committed_datetime.isoformat()
+                    }
+                    file_count += 1
+        except Exception as e:
+            # If file traversal fails, return minimal data
+            print(f"Error extracting file stats: {e}")
         
         return files
     

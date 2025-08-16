@@ -6,6 +6,7 @@ import axios from 'axios';
 
 interface QueryInterfaceProps {
   repoId: string;
+  repoTitle?: string;
 }
 
 interface QueryResult {
@@ -18,7 +19,7 @@ interface QueryResult {
   };
 }
 
-export function QueryInterface({ repoId }: QueryInterfaceProps) {
+export function QueryInterface({ repoId, repoTitle }: QueryInterfaceProps) {
   const [query, setQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState<QueryResult[]>([]);
@@ -38,6 +39,8 @@ export function QueryInterface({ repoId }: QueryInterfaceProps) {
         query: currentQuery
       });
 
+      // Debug log to see the structure
+      console.log('Query response:', response.data);
       setResults(prev => [response.data, ...prev]);
     } catch (error: any) {
       console.error('Query failed:', error);
@@ -55,7 +58,21 @@ export function QueryInterface({ repoId }: QueryInterfaceProps) {
     }
   };
 
-  const suggestionQueries = [
+  // Get repo-specific queries or fallback to generic ones
+  const getRepoSpecificQueries = () => {
+    if (!repoTitle) return null;
+    
+    // Import at runtime to avoid build issues
+    const { repositoryExamples } = require('@/data/repositoryExamples');
+    const repo = repositoryExamples.find((r: any) => 
+      repoTitle.toLowerCase().includes(r.title.toLowerCase()) ||
+      r.title.toLowerCase().includes(repoTitle.toLowerCase())
+    );
+    
+    return repo?.sampleQueries || null;
+  };
+
+  const suggestionQueries = getRepoSpecificQueries() || [
     "How did the authentication system evolve?",
     "What major architectural changes happened?",
     "Why was this framework chosen?",
@@ -113,7 +130,7 @@ export function QueryInterface({ repoId }: QueryInterfaceProps) {
               Try these questions:
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {suggestionQueries.map((suggestion, index) => (
+              {suggestionQueries.map((suggestion: string, index: number) => (
                 <button
                   key={index}
                   onClick={() => handleSuggestionClick(suggestion)}
@@ -133,10 +150,12 @@ export function QueryInterface({ repoId }: QueryInterfaceProps) {
               <div key={index} className="border border-gray-200 rounded-lg p-4">
                 <div className="mb-3">
                   <div className="font-medium text-gray-900 mb-2">
-                    Q: {result.query}
+                    Q: {typeof result.query === 'object' ? JSON.stringify(result.query) : result.query}
                   </div>
                   <div className="text-gray-700">
-                    {result.result.answer}
+                    {typeof result.result.answer === 'object' ? 
+                      JSON.stringify(result.result.answer, null, 2) : 
+                      String(result.result.answer)}
                   </div>
                 </div>
 
@@ -146,8 +165,71 @@ export function QueryInterface({ repoId }: QueryInterfaceProps) {
                     <div className="space-y-2">
                       {result.result.evidence.slice(0, 3).map((evidence: any, i: number) => (
                         <div key={i} className="bg-gray-50 p-3 rounded text-sm">
-                          <div className="font-medium">{evidence.commit}</div>
-                          <div className="text-gray-600">{evidence.description}</div>
+                          {typeof evidence === 'object' && evidence !== null ? (
+                            <>
+                              <div className="font-medium">
+                                {/* Handle nested commit object */}
+                                {evidence.commit && typeof evidence.commit === 'object' ? 
+                                  (evidence.commit.hash ? 
+                                    `Commit: ${evidence.commit.hash.substring(0, 8)}` : 
+                                    evidence.commit.message || 'Commit') :
+                                  (evidence.commit_hash ? 
+                                    `Commit: ${evidence.commit_hash.substring(0, 8)}` : 
+                                    evidence.hash ? 
+                                      `Commit: ${evidence.hash.substring(0, 8)}` :
+                                      evidence.message || 'Commit')}
+                              </div>
+                              <div className="text-gray-600">
+                                {evidence.description || 
+                                 (evidence.commit && typeof evidence.commit === 'object' ? 
+                                   evidence.commit.message : 
+                                   evidence.message) || 
+                                 (evidence.files_changed ? 
+                                   `${evidence.files_changed} ${typeof evidence.files_changed === 'number' ? 'files' : ''} changed` : 
+                                   '')}
+                                {/* Show author if available */}
+                                {(evidence.author || (evidence.commit && evidence.commit.author)) && (
+                                  <div className="text-xs text-gray-500">
+                                    by {typeof (evidence.author || evidence.commit.author) === 'object' ? 
+                                      JSON.stringify(evidence.author || evidence.commit.author) : 
+                                      String(evidence.author || evidence.commit.author)}
+                                  </div>
+                                )}
+                              </div>
+                              {(evidence.date || (evidence.commit && evidence.commit.date)) && (
+                                <div className="text-xs text-gray-500 mt-1">
+                                  {new Date(evidence.date || evidence.commit.date).toLocaleDateString()}
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div className="text-gray-600">{String(evidence)}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {result.result.timeline && result.result.timeline.length > 0 && (
+                  <div className="mb-3">
+                    <h5 className="font-medium text-gray-900 mb-2">Timeline:</h5>
+                    <div className="space-y-2">
+                      {result.result.timeline.slice(0, 5).map((event: any, i: number) => (
+                        <div key={i} className="flex items-start space-x-3 text-sm">
+                          <div className="text-blue-500 mt-1">•</div>
+                          <div>
+                            <div className="text-gray-700">
+                              {typeof event === 'object' && event !== null ? 
+                                (event.event || event.description || event.message || 'Event') :
+                                String(event)}
+                            </div>
+                            {event.date && (
+                              <div className="text-xs text-gray-500">
+                                {new Date(event.date).toLocaleDateString()}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -159,7 +241,7 @@ export function QueryInterface({ repoId }: QueryInterfaceProps) {
                     <h5 className="font-medium text-gray-900 mb-2">Key Insights:</h5>
                     <ul className="list-disc list-inside text-sm text-gray-700 space-y-1">
                       {result.result.insights.map((insight: string, i: number) => (
-                        <li key={i}>{insight}</li>
+                        <li key={i}>{String(insight)}</li>
                       ))}
                     </ul>
                   </div>

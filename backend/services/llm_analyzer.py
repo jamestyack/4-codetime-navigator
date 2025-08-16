@@ -7,19 +7,42 @@ import asyncio
 
 class LLMAnalyzer:
     def __init__(self):
-        self.openai_client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        self.anthropic_client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        openai_key = os.getenv("OPENAI_API_KEY")
+        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+        
+        # Handle missing API keys gracefully for development
+        if not openai_key or openai_key == "dummy_key_for_testing":
+            self.openai_client = None
+        else:
+            try:
+                self.openai_client = openai.AsyncOpenAI(api_key=openai_key)
+            except Exception as e:
+                print(f"Error initializing OpenAI client: {e}")
+                self.openai_client = None
+            
+        if not anthropic_key or anthropic_key == "dummy_key_for_testing":
+            self.anthropic_client = None
+        else:
+            try:
+                self.anthropic_client = anthropic.AsyncAnthropic(api_key=anthropic_key)
+            except Exception as e:
+                print(f"Error initializing Anthropic client: {e}")
+                self.anthropic_client = None
     
     async def analyze_patterns(self, commits: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Analyze commit patterns using LLM"""
-        # Categorize commits in batches
-        categorized_commits = await self._categorize_commits(commits)
+        # Limit commits for faster processing
+        limited_commits = commits[:200]  # Only analyze first 200 commits for speed
         
-        # Detect architectural patterns
-        architectural_patterns = await self._detect_architectural_patterns(categorized_commits)
+        # Skip LLM categorization for development speed, use simple heuristics
+        categorized_commits = self._fast_categorize_commits(limited_commits)
         
-        # Identify major milestones
-        milestones = await self._identify_milestones(categorized_commits)
+        # Only analyze architectural patterns for most important commits
+        arch_commits = [c for c in categorized_commits if c.get("category") in ["architecture", "refactor"]][:20]
+        architectural_patterns = await self._detect_architectural_patterns(arch_commits) if arch_commits else []
+        
+        # Identify major milestones using fast heuristics
+        milestones = self._identify_milestones(categorized_commits)
         
         return {
             "categorized_commits": categorized_commits,
@@ -55,13 +78,25 @@ class LLMAnalyzer:
             """
             
             try:
-                response = await self.openai_client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.3
-                )
-                
-                analysis = json.loads(response.choices[0].message.content)
+                if not self.openai_client:
+                    # Fallback for development without API key
+                    analysis = [{"category": "unknown", "scope": "unknown", "impact": "medium", "description": commit["message"][:100]} for commit in batch]
+                else:
+                    response = await self.openai_client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.3
+                    )
+                    
+                    content = response.choices[0].message.content
+                    if not content or content.strip() == "":
+                        raise ValueError("Empty response from OpenAI API")
+                    
+                    try:
+                        analysis = json.loads(content)
+                    except json.JSONDecodeError:
+                        # Fallback if JSON parsing fails
+                        analysis = [{"category": "unknown", "scope": "unknown", "impact": "medium", "description": commit["message"][:100]} for commit in batch]
                 
                 # Merge analysis with original commits
                 for j, commit_analysis in enumerate(analysis):
@@ -85,6 +120,75 @@ class LLMAnalyzer:
             
             # Rate limiting
             await asyncio.sleep(0.5)
+        
+        return categorized
+    
+    def _fast_categorize_commits(self, commits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Fast commit categorization using keyword heuristics"""
+        categorized = []
+        
+        for commit in commits:
+            message = commit["message"].lower()
+            files = commit.get("files", [])
+            
+            # Simple keyword-based categorization
+            category = "unknown"
+            scope = "unknown"
+            impact = "medium"
+            
+            # Categorization heuristics
+            if any(word in message for word in ["fix", "bug", "error", "issue", "patch"]):
+                category = "bugfix"
+            elif any(word in message for word in ["feat", "add", "new", "implement", "create"]):
+                category = "feature"
+            elif any(word in message for word in ["refactor", "restructure", "reorganize", "cleanup"]):
+                category = "refactor"
+            elif any(word in message for word in ["doc", "readme", "comment", "documentation"]):
+                category = "documentation"
+            elif any(word in message for word in ["test", "spec", "coverage"]):
+                category = "test"
+            elif any(word in message for word in ["style", "format", "lint", "prettier"]):
+                category = "style"
+            elif any(word in message for word in ["perf", "optimize", "performance", "speed"]):
+                category = "performance"
+            elif any(word in message for word in ["security", "auth", "permission", "vulnerability"]):
+                category = "security"
+            elif any(word in message for word in ["architecture", "design", "pattern", "structure"]):
+                category = "architecture"
+            elif any(word in message for word in ["build", "config", "setup", "deploy", "ci", "cd"]):
+                category = "build"
+            
+            # Scope detection
+            if any(".js" in f or ".ts" in f or ".jsx" in f or ".tsx" in f for f in files):
+                scope = "frontend"
+            elif any(".py" in f or ".java" in f or ".go" in f or ".rb" in f for f in files):
+                scope = "backend"
+            elif any("test" in f.lower() or "spec" in f.lower() for f in files):
+                scope = "test"
+            elif any("doc" in f.lower() or "readme" in f.lower() for f in files):
+                scope = "documentation"
+            elif any("config" in f.lower() or "dockerfile" in f.lower() or ".yml" in f or ".yaml" in f for f in files):
+                scope = "infrastructure"
+            
+            # Impact based on files changed and stats
+            files_changed = commit["stats"].get("files_changed", 0)
+            lines_changed = commit["stats"].get("insertions", 0) + commit["stats"].get("deletions", 0)
+            
+            if files_changed > 10 or lines_changed > 500:
+                impact = "high"
+            elif files_changed > 3 or lines_changed > 100:
+                impact = "medium"
+            else:
+                impact = "low"
+            
+            enhanced_commit = commit.copy()
+            enhanced_commit.update({
+                "category": category,
+                "scope": scope,
+                "impact": impact,
+                "description": commit["message"][:100]
+            })
+            categorized.append(enhanced_commit)
         
         return categorized
     
@@ -117,19 +221,31 @@ class LLMAnalyzer:
         """
         
         try:
+            if not self.anthropic_client:
+                # Fallback for development without API key
+                return []
+            
             response = await self.anthropic_client.messages.create(
                 model="claude-3-haiku-20240307",
                 max_tokens=1000,
                 messages=[{"role": "user", "content": prompt}]
             )
             
-            return json.loads(response.content[0].text)
+            content = response.content[0].text
+            if not content or content.strip() == "":
+                return []
+            
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError:
+                # Return empty array if JSON parsing fails
+                return []
         
         except Exception as e:
             print(f"Error detecting architectural patterns: {e}")
             return []
     
-    async def _identify_milestones(self, commits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _identify_milestones(self, commits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Identify major project milestones"""
         # Filter high-impact commits
         milestones = []
@@ -157,17 +273,20 @@ class LLMAnalyzer:
     
     async def process_query(self, query: str, commits: List[Dict], patterns: Dict) -> Dict[str, Any]:
         """Process natural language query about the repository"""
+        # Use only the most relevant commits for faster processing
+        relevant_commits = self._filter_relevant_commits(query, commits[:50])  # Limit to 50 most recent
+        
         # Prepare context from analysis
         context = {
             "total_commits": len(commits),
             "categories": {},
-            "recent_commits": commits[:10],
-            "patterns": patterns.get("architectural_patterns", []),
-            "milestones": patterns.get("milestones", [])
+            "recent_commits": relevant_commits[:5],  # Even fewer for context
+            "patterns": patterns.get("architectural_patterns", [])[:3],  # Limit patterns
+            "milestones": patterns.get("milestones", [])[:5]  # Limit milestones
         }
         
-        # Count categories
-        for commit in commits:
+        # Count categories from limited set
+        for commit in relevant_commits:
             category = commit.get("category", "unknown")
             context["categories"][category] = context["categories"].get(category, 0) + 1
         
@@ -193,13 +312,44 @@ class LLMAnalyzer:
         """
         
         try:
+            if not self.openai_client:
+                # Fallback for development without API key
+                return {
+                    "answer": f"Based on the repository analysis, there are {context['total_commits']} commits. This is a development environment response.",
+                    "evidence": [{"commit": "demo", "description": "Demo evidence for development"}],
+                    "timeline": [{"date": "2024", "event": "Demo timeline for development"}],
+                    "insights": ["This is a demo response for development environment"]
+                }
+            
             response = await self.openai_client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3
             )
             
-            return json.loads(response.choices[0].message.content)
+            content = response.choices[0].message.content
+            if not content or content.strip() == "":
+                raise ValueError("Empty response from OpenAI API")
+            
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError as e:
+                # Try to extract JSON from markdown code blocks
+                import re
+                json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', content, re.DOTALL)
+                if json_match:
+                    try:
+                        return json.loads(json_match.group(1))
+                    except json.JSONDecodeError:
+                        pass
+                
+                # If JSON parsing fails, return the raw content in a structured format
+                return {
+                    "answer": content,
+                    "evidence": [],
+                    "timeline": [],
+                    "insights": ["Raw response - JSON parsing failed"]
+                }
         
         except Exception as e:
             return {
@@ -208,3 +358,30 @@ class LLMAnalyzer:
                 "timeline": [],
                 "insights": []
             }
+    
+    def _filter_relevant_commits(self, query: str, commits: List[Dict]) -> List[Dict]:
+        """Filter commits that might be relevant to the query"""
+        query_words = query.lower().split()
+        relevant_commits = []
+        
+        for commit in commits:
+            message = commit.get("message", "").lower()
+            category = commit.get("category", "").lower()
+            files = " ".join(commit.get("files", [])).lower()
+            
+            # Simple relevance scoring
+            relevance_score = 0
+            for word in query_words:
+                if word in message:
+                    relevance_score += 3
+                if word in category:
+                    relevance_score += 2
+                if word in files:
+                    relevance_score += 1
+            
+            if relevance_score > 0 or commit.get("impact") == "high":
+                relevant_commits.append((commit, relevance_score))
+        
+        # Sort by relevance and return top commits
+        relevant_commits.sort(key=lambda x: x[1], reverse=True)
+        return [commit for commit, score in relevant_commits[:20]]

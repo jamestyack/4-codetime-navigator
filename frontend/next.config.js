@@ -6,9 +6,12 @@ const nextConfig = {
         source: '/api/:path*',
         destination: process.env.NODE_ENV === 'production' 
           ? 'https://your-render-app.onrender.com/:path*'
-          : 'http://localhost:8000/:path*',
+          : 'http://localhost:8001/:path*',
       },
     ]
+  },
+  experimental: {
+    proxyTimeout: 300000, // 5 minutes timeout
   },
 }
 
