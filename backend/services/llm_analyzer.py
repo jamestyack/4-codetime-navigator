@@ -15,7 +15,8 @@ class LLMAnalyzer:
             self.openai_client = None
         else:
             try:
-                self.openai_client = openai.AsyncOpenAI(api_key=openai_key)
+                openai.api_key = openai_key
+                self.openai_client = openai
             except Exception as e:
                 print(f"Error initializing OpenAI client: {e}")
                 self.openai_client = None
@@ -24,7 +25,7 @@ class LLMAnalyzer:
             self.anthropic_client = None
         else:
             try:
-                self.anthropic_client = anthropic.AsyncAnthropic(api_key=anthropic_key)
+                self.anthropic_client = anthropic.Anthropic(api_key=anthropic_key)
             except Exception as e:
                 print(f"Error initializing Anthropic client: {e}")
                 self.anthropic_client = None
@@ -82,8 +83,8 @@ class LLMAnalyzer:
                     # Fallback for development without API key
                     analysis = [{"category": "unknown", "scope": "unknown", "impact": "medium", "description": commit["message"][:100]} for commit in batch]
                 else:
-                    response = await self.openai_client.chat.completions.create(
-                        model="gpt-4o-mini",
+                    response = await self.openai_client.ChatCompletion.acreate(
+                        model="gpt-3.5-turbo",
                         messages=[{"role": "user", "content": prompt}],
                         temperature=0.3
                     )
@@ -225,13 +226,13 @@ class LLMAnalyzer:
                 # Fallback for development without API key
                 return []
             
-            response = await self.anthropic_client.messages.create(
-                model="claude-3-haiku-20240307",
-                max_tokens=1000,
-                messages=[{"role": "user", "content": prompt}]
+            response = await self.anthropic_client.acompletion(
+                model="claude-instant-1",
+                max_tokens_to_sample=1000,
+                prompt=f"\n\nHuman: {prompt}\n\nAssistant:"
             )
             
-            content = response.content[0].text
+            content = response.completion
             if not content or content.strip() == "":
                 return []
             
@@ -321,8 +322,8 @@ class LLMAnalyzer:
                     "insights": ["This is a demo response for development environment"]
                 }
             
-            response = await self.openai_client.chat.completions.create(
-                model="gpt-4o-mini",
+            response = await self.openai_client.ChatCompletion.acreate(
+                model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3
             )
